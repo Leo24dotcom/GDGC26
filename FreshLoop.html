@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FreshLoop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="FreshLoop.css">
+</head>
+<body>
+<header><div class="wrap" style="padding-bottom:0">
+  <div class="top"><h1 class="brand">FreshLoop</h1><div class="ticker"><b id="meals">1,240</b> meals rescued</div></div>
+  <div class="chips" id="chips" role="group" aria-label="Dietary filters"></div>
+</div></header>
+
+<main class="wrap" id="feed" aria-live="polite"></main>
+
+<nav><div>
+  <button class="tab" aria-current="page">Home</button>
+  <button class="post" id="open">+ Post food</button>
+</div></nav>
+
+<dialog id="dlg"><form id="f" method="dialog">
+  <h2>Post surplus food</h2>
+  <label class="drop" id="drop" for="file" tabindex="0"><span id="dropText">Tap to add a photo of the food</span></label>
+  <input type="file" id="file" accept="image/*" hidden>
+  <label>What is it?<input id="title" required maxlength="60" placeholder="e.g. Pastries from today’s bake"></label>
+  <label>Details<textarea id="desc" rows="2" maxlength="160" placeholder="Items, how it’s packed, where to pick up"></textarea></label>
+  <div class="two">
+    <label>Servings<input id="serv" type="number" min="1" value="10" required></label>
+    <label>Safe for<select id="hrs"><option value="1">1 hour</option><option value="3" selected>3 hours</option><option value="6">6 hours</option><option value="12">12 hours</option></select></label>
+  </div>
+  <label>Dietary tags<select id="diet"><option value="">None</option><option>Vegetarian</option><option>Halal</option><option>Nut-free</option></select></label>
+  <div class="acts"><button type="button" class="ghost" id="cancel">Cancel</button><button class="claim" id="submit" value="ok">Post</button></div>
+</form></dialog>
+
+<script src="FreshLoop.js"></script>
+</body>
+</html>
