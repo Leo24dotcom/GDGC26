@@ -1,7 +1,9 @@
 import os
 import sys
+import json
 import time
 import mimetypes
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -11,6 +13,8 @@ from typing import List, Literal
 load_dotenv()
 
 MODEL = "gemini-3.5-flash-lite"
+OUTPUT_FILE = "listings.json"
+
 
 class FoodItem(BaseModel):
     name: str
@@ -18,6 +22,7 @@ class FoodItem(BaseModel):
     unit: str
     category: Literal["prepared", "baked", "produce", "packaged", "other"]
     confidence: float
+
 
 class Listing(BaseModel):
     items: List[FoodItem]
@@ -27,6 +32,7 @@ class Listing(BaseModel):
     safe_hours: float
     storage_notes: str
     needs_human_check: bool
+
 
 PROMPT = """You are a food-rescue assistant. Analyze the photo of surplus food.
 List each distinct item, estimate quantity and servings, flag likely allergens,
@@ -39,8 +45,51 @@ client = genai.Client(
     http_options=types.HttpOptions(timeout=30000),  # 30 seconds, in ms
 )
 
-def analyze(image_bytes: bytes, mime_type: str = "image/jpeg", retries: int = 4) -> Listing:
-    """Takes image bytes, returns a Listing. Retries on busy/overloaded errors."""
+
+# ---------- File storage (temporary, replace with Firestore later) ----------
+
+def load_listings() -> list:
+    try:
+        with open(OUTPUT_FILE, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def _write_listings(records: list):
+    with open(OUTPUT_FILE, "w") as f:
+        json.dump(records, f, indent=2)
+
+
+def save_result(listing: Listing) -> dict:
+    """Appends a Listing (plus metadata) to listings.json and returns the record."""
+    records = load_listings()
+    record = listing.model_dump()
+    record["id"] = max((r["id"] for r in records), default=0) + 1
+    record["created_at"] = datetime.now(timezone.utc).isoformat()
+    record["status"] = "available"
+    records.append(record)
+    _write_listings(records)
+    return record
+
+
+def update_status(listing_id: int, status: str, claimed_by: str | None = None) -> dict | None:
+    records = load_listings()
+    for r in records:
+        if r["id"] == listing_id:
+            r["status"] = status
+            if claimed_by:
+                r["claimed_by"] = claimed_by
+            _write_listings(records)
+            return r
+    return None
+
+
+# ---------- Gemini ----------
+
+def analyze(image_bytes: bytes, mime_type: str = "image/jpeg", retries: int = 4) -> dict:
+    """Takes image bytes, returns the saved listing record (a dict).
+    Retries on busy/overloaded errors."""
     for attempt in range(retries):
         try:
             resp = client.models.generate_content(
@@ -55,14 +104,14 @@ def analyze(image_bytes: bytes, mime_type: str = "image/jpeg", retries: int = 4)
                 ),
             )
             if resp.parsed:
-                return resp.parsed
+                return save_result(resp.parsed)
             print(f"Attempt {attempt + 1}: couldn't parse output. Raw: {resp.text}")
         except Exception as e:
             msg = str(e)
             print(f"Attempt {attempt + 1} failed: {msg[:100]}")
             if "404" in msg or "NOT_FOUND" in msg or "API key" in msg:
-                raise                      # retrying won't fix these
-        time.sleep(2 ** attempt)           # waits 1s, 2s, 4s, 8s
+                raise  # retrying won't fix these
+        time.sleep(2 ** attempt)  # waits 1s, 2s, 4s, 8s
     raise RuntimeError("Gemini failed after all retries")
 
 
@@ -75,6 +124,6 @@ if __name__ == "__main__":
 
     print("image bytes:", len(image_bytes))
     start = time.time()
-    listing = analyze(image_bytes, mime)
+    result = analyze(image_bytes, mime)
     print(f"Took {time.time() - start:.1f}s\n")
-    print(listing.model_dump_json(indent=2))
+    print(json.dumps(result, indent=2))
