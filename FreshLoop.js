@@ -5,9 +5,9 @@
    emoji = emoji shown as the "photo" | g = two gradient colors behind the emoji
    When you connect Firebase, this array is what you replace with data from Firestore. */
 var posts=[
- {org:"Cafe Ladera",av:"🥐",where:"0.4 mi away",title:"End-of-day pastries",desc:"Croissants and muffins, boxed in 6s. Ask at the back counter.",serv:30,hrs:1,tags:["Vegetarian"],warn:["Contains gluten","Contains dairy"],emoji:"🥐",g:"#F5D7A1,#E9A55B"},
- {org:"Oakes Dining Hall",av:"🍝",where:"0.7 mi away",title:"Veggie pasta trays",desc:"Three full hotel pans, still hot. Bring your own containers if you can.",serv:40,hrs:3,tags:["Vegetarian"],warn:["Contains gluten"],emoji:"🍝",g:"#F7C6A8,#E4745A"},
- {org:"Harvest Market",av:"🥬",where:"1.1 mi away",title:"Produce box, slightly bruised",desc:"Tomatoes, kale and peppers. Fine to eat, not shelf-pretty.",serv:20,hrs:12,tags:["Vegetarian","Halal","Nut-free"],warn:[],emoji:"🍅",g:"#C9E7B5,#6FB56B"}
+ {org:"Cafe Ladera",av:"🥐",where:"0.4 mi away",addr:"Cafe Ladera, Santa Cruz, CA",title:"End-of-day pastries",desc:"Croissants and muffins, boxed in 6s. Ask at the back counter.",serv:30,hrs:1,tags:["Vegetarian"],warn:["Contains gluten","Contains dairy"],emoji:"🥐",g:"#F5D7A1,#E9A55B"},
+ {org:"Oakes Dining Hall",av:"🍝",where:"0.7 mi away",addr:"Oakes College, Santa Cruz, CA",title:"Veggie pasta trays",desc:"Three full hotel pans, still hot. Bring your own containers if you can.",serv:40,hrs:3,tags:["Vegetarian"],warn:["Contains gluten"],emoji:"🍝",g:"#F7C6A8,#E4745A"},
+ {org:"Harvest Market",av:"🥬",where:"1.1 mi away",addr:"Harvest Market, Santa Cruz, CA",title:"Produce box, slightly bruised",desc:"Tomatoes, kale and peppers. Fine to eat, not shelf-pretty.",serv:20,hrs:12,tags:["Vegetarian","Halal","Nut-free"],warn:[],emoji:"🍅",g:"#C9E7B5,#6FB56B"}
 ];
 
 /* ===== 2. APP STATE (values that change while the app runs) ===== */
@@ -38,7 +38,7 @@ function render(){
   $("feed").innerHTML=list.map(function(p){
     // i = the post's position in the array; bg = uploaded photo if there is one, else the gradient
     var i=posts.indexOf(p),bg=p.img?'background-image:url('+p.img+')':'background:linear-gradient(135deg,'+p.g.split(",")[0]+','+p.g.split(",")[1]+')';
-    return '<article class="'+(p.fresh?"new":"")+'">'+
+    return '<article class="'+(p.fresh?"new":"")+'" data-open="'+i+'" tabindex="0">'+
     // Top row: avatar, donor name, distance
     '<div class="who"><div class="av">'+p.av+'</div><div><b>'+esc(p.org)+'</b><span>'+p.where+'</span></div></div>'+
     // Photo area with the urgency badge on top
@@ -49,7 +49,7 @@ function render(){
     '<div class="tags">'+
     p.tags.map(function(t){return '<span class="tag">'+esc(t)+'</span>'}).join("")+p.warn.map(function(t){return '<span class="tag warn">'+esc(t)+'</span>'}).join("")+
     // Bottom row: servings and the Claim button (greyed out and relabeled once claimed)
-    '</div><div class="row"><span class="meta">About '+p.serv+' servings</span><button class="claim" data-i="'+i+'"'+(claimed[i]?" disabled":"")+'>'+(claimed[i]?"Claimed":"Claim")+'</button></div></div></article>'}).join("");
+    '</div><div class="row"><span class="meta">About '+p.serv+' servings</span><button class="claim" data-i="'+i+'"'+(p.claimed?" disabled":"")+'>'+(p.claimed?"Claimed":"Claim")+'</button></div></div></article>'}).join("");
 }
 
 /* ===== 5. FILTER CHIPS ===== */
@@ -60,14 +60,39 @@ function chips(){
 // When a chip is clicked: save the choice, redraw the chips, redraw the feed
 $("chips").onclick=function(e){var c=e.target.getAttribute("data-c");if(c){filter=c;chips();render()}};
 
-/* ===== 6. CLAIM BUTTON =====
-   One click listener on the whole feed; it only acts if the click was on a Claim button (data-i). */
-$("feed").onclick=function(e){var i=e.target.getAttribute("data-i");if(i===null)return;
-  claimed[i]=true;                                   // mark the post as claimed
-  meals+=posts[i].serv;                              // add its servings to the counter
-  $("meals").textContent=meals.toLocaleString();     // update the header number (adds commas)
-  render();                                          // redraw so the button shows "Claimed"
-  toast("Claimed. The donor has been notified.")};
+/* ===== 6. CLAIM + DETAIL VIEW ===== */
+// Marks post number i as claimed (stored on the post itself, so it stays correct when new posts are added)
+function claim(i){var p=posts[i];if(p.claimed)return;p.claimed=true;meals+=p.serv;$("meals").textContent=meals.toLocaleString();render();if($("detail").open)openDetail(i);toast("Claimed. The donor has been notified.")}
+// Clock time when the food stops being safe, e.g. "9:40 PM"
+function safeUntil(h){return new Date(Date.now()+h*3600000).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}
+// Fills the detail pop-up for post number i and opens it
+function openDetail(i){
+  var p=posts[i],bg=p.img?'background-image:url('+p.img+')':'background:linear-gradient(135deg,'+p.g.split(",")[0]+','+p.g.split(",")[1]+')';
+  // Map: an embedded Google map of the pickup address, plus a directions link
+  var map=p.addr?'<iframe class="map" title="Map of the pickup location" loading="lazy" src="https://maps.google.com/maps?q='+encodeURIComponent(p.addr)+'&z=15&output=embed"></iframe><div class="addr"><span>'+esc(p.addr)+'</span><a class="dir" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(p.addr)+'">Get directions</a></div>':'<div class="nomap">No pickup address was added to this post.</div>';
+  $("detailBody").innerHTML=
+    // Large photo with the urgency badge
+    '<div class="photo big" style="'+bg+'" role="img" aria-label="'+esc(p.title)+'">'+(p.img?"":p.emoji)+'<span class="badge '+urg(p.hrs)+'"><i></i>'+lbl(p.hrs)+'</span></div>'+
+    '<div class="dbody">'+
+    // Donor row, title, full description
+    '<div class="who flush"><div class="av">'+p.av+'</div><div><b>'+esc(p.org)+'</b><span>'+esc(p.where)+'</span></div></div>'+
+    '<h2>'+esc(p.title)+'</h2><p class="desc">'+esc(p.desc)+'</p>'+
+    // Key facts: servings and safe-until time
+    '<div class="facts"><div><b>'+p.serv+'</b><span>servings</span></div><div><b>'+p.until+'</b><span>safe until</span></div></div>'+
+    // Dietary tags and allergen warnings
+    '<div class="tags">'+p.tags.map(function(t){return '<span class="tag">'+esc(t)+'</span>'}).join("")+p.warn.map(function(t){return '<span class="tag warn">'+esc(t)+'</span>'}).join("")+'</div>'+
+    map+
+    // Claim button (data-d tells the click handler which post)
+    '<button class="claim wide" data-d="'+i+'"'+(p.claimed?" disabled":"")+'>'+(p.claimed?"Claimed":"Claim this food")+'</button></div>';
+  $("detail").showModal();
+}
+// Click a card (anywhere except its Claim button) to open its detail view; the Claim button claims it
+$("feed").onclick=function(e){var i=e.target.getAttribute("data-i");if(i!==null){claim(i);return}var a=e.target.closest("article");if(a)openDetail(a.getAttribute("data-open"))};
+// Same thing from the keyboard: Tab to a card and press Enter
+$("feed").onkeydown=function(e){if(e.key==="Enter"&&e.target.tagName==="ARTICLE")openDetail(e.target.getAttribute("data-open"))};
+// Detail pop-up: the X button closes it, clicking the dark backdrop closes it, Claim button claims
+$("dclose").onclick=function(){$("detail").close()};
+$("detail").onclick=function(e){if(e.target===this){this.close();return}var d=e.target.getAttribute("data-d");if(d!==null)claim(d)};
 
 /* ===== 7. TOAST (small message that disappears after 2.2 seconds) ===== */
 function toast(m){var t=document.createElement("div");t.className="toast";t.textContent=m;document.body.appendChild(t);setTimeout(function(){t.remove()},2200)}
@@ -88,11 +113,12 @@ $("file").onchange=function(){var f=this.files[0];if(!f)return;var r=new FileRea
    Builds a new post from the form fields and puts it at the top of the feed. */
 $("f").onsubmit=function(){
   var h=parseInt($("hrs").value,10),d=$("diet").value;   // h = hours safe, d = chosen dietary tag
-  posts.unshift({org:"You",av:"🙋",where:"Just posted",title:$("title").value.trim(),desc:$("desc").value.trim()||"Pickup details to be confirmed.",serv:parseInt($("serv").value,10)||1,hrs:h,tags:d?[d]:[],warn:[],emoji:"🍽️",g:"#E8DFC0,#C7B77A",img:photo,fresh:true});
+  posts.unshift({org:"You",av:"🙋",where:"Just posted",addr:$("addr").value.trim(),until:safeUntil(h),title:$("title").value.trim(),desc:$("desc").value.trim()||"Pickup details to be confirmed.",serv:parseInt($("serv").value,10)||1,hrs:h,tags:d?[d]:[],warn:[],emoji:"🍽️",g:"#E8DFC0,#C7B77A",img:photo,fresh:true});
   filter="All";chips();render();                         // reset the filter and redraw
   window.scrollTo({top:0,behavior:"smooth"});            // scroll up to the new post
   toast("Posted. Nearby receivers will be alerted.")};
 
 /* ===== 10. START =====
    Draw the chips and the feed when the page first loads. */
+posts.forEach(function(p){p.until=safeUntil(p.hrs)});   // fill in each seed post's safe-until time
 chips();render();

@@ -6,7 +6,7 @@
 <title>FreshLoop</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="FreshLoop.css">
+<link rel="stylesheet" href="FreshLoop2.css">
 </head>
 <body>
 <header><div class="wrap" style="padding-bottom:0">
@@ -27,6 +27,7 @@
   <input type="file" id="file" accept="image/*" hidden>
   <label>What is it?<input id="title" required maxlength="60" placeholder="e.g. Pastries from today’s bake"></label>
   <label>Details<textarea id="desc" rows="2" maxlength="160" placeholder="Items, how it’s packed, where to pick up"></textarea></label>
+  <label>Pickup address<input id="addr" maxlength="100" placeholder="Street, city"></label>
   <div class="two">
     <label>Servings<input id="serv" type="number" min="1" value="10" required></label>
     <label>Safe for<select id="hrs"><option value="1">1 hour</option><option value="3" selected>3 hours</option><option value="6">6 hours</option><option value="12">12 hours</option></select></label>
@@ -35,6 +36,8 @@
   <div class="acts"><button type="button" class="ghost" id="cancel">Cancel</button><button class="claim" id="submit" value="ok">Post</button></div>
 </form></dialog>
 
-<script src="FreshLoop.js"></script>
+<dialog id="detail"><button class="x" id="dclose" aria-label="Close">✕</button><div id="detailBody"></div></dialog>
+
+<script src="FreshLoop2.js"></script>
 </body>
 </html>
