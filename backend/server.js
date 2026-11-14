@@ -2,7 +2,7 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const { initializeApp, cert, getApps } = require("firebase-admin/app");
-const { getFirestore } = require("firebase-admin/firestore");
+const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 
 // Initialize Firebase Admin SDK
 if (!getApps().length) {
@@ -43,6 +43,36 @@ app.get("/api/listings", async (_req, res) => {
   } catch (error) {
     console.error("Error fetching listings from Firestore:", error);
     res.status(500).json({ error: "Failed to fetch listings" });
+  }
+});
+
+app.post("/api/listings", async (req, res) => {
+  try {
+    const { title, servings } = req.body || {};
+
+    if (typeof title !== "string" || title.trim().length === 0) {
+      return res.status(400).json({
+        error: "Title must be a non-empty string",
+      });
+    }
+
+    if (typeof servings !== "number" || !Number.isInteger(servings) || servings <= 0) {
+      return res.status(400).json({
+        error: "Servings must be a positive whole number",
+      });
+    }
+
+    const docRef = await db.collection("listings").add({
+      title: title.trim(),
+      servings,
+      status: "available",
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    res.status(201).json({ id: docRef.id });
+  } catch (error) {
+    console.error("Error creating listing in Firestore:", error);
+    res.status(500).json({ error: "Failed to create listing" });
   }
 });
 
