@@ -3,6 +3,8 @@ import sys
 import json
 import time
 import mimetypes
+import io
+from PIL import Image
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from google import genai
@@ -25,6 +27,8 @@ class FoodItem(BaseModel):
 
 
 class Listing(BaseModel):
+    title: str
+    description: str
     items: List[FoodItem]
     est_servings: int
     allergens: List[str]
@@ -35,6 +39,8 @@ class Listing(BaseModel):
 
 
 PROMPT = """You are a food-rescue assistant. Analyze the photo of surplus food.
+Write a short, appealing listing title (max 50 characters) and a one-sentence
+description (max 100 characters) a receiver would find useful.
 List each distinct item, estimate quantity and servings, flag likely allergens,
 and give a CONSERVATIVE safe-to-eat window in hours (never more than 48).
 If anything is unclear, lower the confidence and set needs_human_check=true.
@@ -61,16 +67,15 @@ def _write_listings(records: list):
         json.dump(records, f, indent=2)
 
 
-def save_result(listing: Listing) -> dict:
-    """Appends a Listing (plus metadata) to listings.json and returns the record."""
+def save_post(post: dict) -> dict:
+    """Saves a post sent by the frontend and returns it with id, created_at and status."""
     records = load_listings()
-    record = listing.model_dump()
-    record["id"] = max((r["id"] for r in records), default=0) + 1
-    record["created_at"] = datetime.now(timezone.utc).isoformat()
-    record["status"] = "available"
-    records.append(record)
+    post["id"] = max((r["id"] for r in records), default=0) + 1
+    post["created_at"] = datetime.now(timezone.utc).isoformat()
+    post["status"] = "available"
+    records.append(post)
     _write_listings(records)
-    return record
+    return post
 
 
 def update_status(listing_id: int, status: str, claimed_by: str | None = None) -> dict | None:
@@ -86,9 +91,16 @@ def update_status(listing_id: int, status: str, claimed_by: str | None = None) -
 
 
 # ---------- Gemini ----------
+def normalize_image(image_bytes: bytes) -> bytes:
+    """Re-encodes any image as a clean JPEG, max 1024px."""
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img.thumbnail((1024, 1024))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    return buf.getvalue()
 
 def analyze(image_bytes: bytes, mime_type: str = "image/jpeg", retries: int = 4) -> dict:
-    """Takes image bytes, returns the saved listing record (a dict).
+    """Takes image bytes and returns Gemini's analysis as a dict (nothing is saved).
     Retries on busy/overloaded errors."""
     for attempt in range(retries):
         try:
@@ -104,11 +116,11 @@ def analyze(image_bytes: bytes, mime_type: str = "image/jpeg", retries: int = 4)
                 ),
             )
             if resp.parsed:
-                return save_result(resp.parsed)
+                return resp.parsed.model_dump()
             print(f"Attempt {attempt + 1}: couldn't parse output. Raw: {resp.text}")
         except Exception as e:
             msg = str(e)
-            print(f"Attempt {attempt + 1} failed: {msg[:100]}")
+            print(f"Attempt {attempt + 1} failed: {type(e).__name__}: {msg[:200]}")
             if "404" in msg or "NOT_FOUND" in msg or "API key" in msg:
                 raise  # retrying won't fix these
         time.sleep(2 ** attempt)  # waits 1s, 2s, 4s, 8s

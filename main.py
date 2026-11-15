@@ -1,6 +1,6 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
-from gemini_service import analyze, load_listings, update_status
+from gemini_service import analyze, load_listings, update_status, save_post
 
 app = FastAPI()
 app.add_middleware(
@@ -18,7 +18,11 @@ def health():
 
 @app.post("/analyze")
 async def analyze_photo(file: UploadFile = File(...)):
+    print(">>> /analyze hit:", file.filename, file.content_type)
     image_bytes = await file.read()
+    print(">>> bytes received:", len(image_bytes))
+    image_bytes = await file.read()
+    print(">>> bytes:", len(image_bytes), "first bytes:", image_bytes[:4].hex(), "type:", file.content_type)
     if len(image_bytes) > 5_000_000:
         raise HTTPException(status_code=413, detail="Image too large (max 5 MB)")
     try:
@@ -33,8 +37,13 @@ async def analyze_photo(file: UploadFile = File(...)):
 def get_listings(status: str | None = None):
     records = load_listings()
     if status:
-        records = [r for r in records if r["status"] == status]
+        records = [r for r in records if r.get("status") == status]
     return records
+
+
+@app.post("/listings")
+def create_listing(post: dict = Body(...)):
+    return save_post(post)
 
 
 @app.post("/listings/{listing_id}/claim")
