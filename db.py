@@ -148,6 +148,30 @@ def get_available_listings():
     docs = db.collection("listings").where("status", "==", "available").stream()
     return [{"id": d.id, **d.to_dict()} for d in docs]
 
+def get_claimed_listings():
+    docs = db.collection("listings").where("status", "==", "claimed").stream()
+    return [{"id": d.id, **d.to_dict()} for d in docs]
+
+def get_picked_up_listings():
+    docs = db.collection("listings").where("status", "==", "picked_up").stream()
+    return [{"id": d.id, **d.to_dict()} for d in docs]
+
+def get_meals_rescued() -> int:
+    docs = db.collection("listings").where("status", "==", "picked_up").stream()
+    total = 0
+    for d in docs:
+        data = d.to_dict() or {}
+        serv = data.get("servings")
+        if serv is None:
+            serv = data.get("est_servings")
+        if serv is None:
+            serv = data.get("serv", 0)
+        try:
+            total += int(serv)
+        except (ValueError, TypeError):
+            pass
+    return total
+
 @firestore.transactional
 def _claim_transaction(transaction, doc_ref, receiver_name: str) -> int:
     snapshot = doc_ref.get(transaction=transaction)
@@ -172,3 +196,25 @@ def claim_listing(listing_id: str, receiver_name: str = "Neighbor") -> int:
     doc_ref = db.collection("listings").document(listing_id)
     transaction = db.transaction()
     return _claim_transaction(transaction, doc_ref, receiver_name)
+
+@firestore.transactional
+def _pickup_transaction(transaction, doc_ref) -> int:
+    snapshot = doc_ref.get(transaction=transaction)
+    if not snapshot.exists:
+        return 404
+    data = snapshot.to_dict() or {}
+    status = data.get("status")
+    if status != "claimed":
+        return 409
+    now = datetime.now(timezone.utc)
+    transaction.update(doc_ref, {
+        "status": "picked_up",
+        "picked_up_at": now,
+        "pickedUpAt": now,
+    })
+    return 200
+
+def pickup_listing(listing_id: str) -> int:
+    doc_ref = db.collection("listings").document(listing_id)
+    transaction = db.transaction()
+    return _pickup_transaction(transaction, doc_ref)

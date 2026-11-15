@@ -34,7 +34,7 @@ header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var
 
 /* ===== 6. FEED GRID (lays the cards out side by side) =====
    Change 270px to make cards wider or narrower. */
-#feed{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px;align-items:start;padding-top:6px}
+#feed,#claimedFeed{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px;align-items:start;padding-top:6px}
 
 /* ===== 7. POST CARD ===== */
 article{background:var(--card);border:1px solid var(--line);border-radius:16px;margin:0;overflow:hidden}   /* the card itself */
@@ -101,6 +101,9 @@ article{cursor:pointer}
 .facts span{font-size:12.5px;color:var(--mute)}
 .map{width:100%;height:220px;border:1px solid var(--line);border-radius:12px;display:block}   /* embedded map */
 .addr{display:flex;justify-content:space-between;gap:10px;font-size:13px;color:var(--mute)}   /* address + directions link */
+.deadline{font-size:13px;color:var(--mute);margin-bottom:8px}
+#claimedSection{margin-top:32px}
+#claimedSection h3{font-size:16px;font-weight:700;margin-bottom:12px;color:var(--text,#1a1a1a)}
 .dir{color:var(--leaf);font-weight:700;text-decoration:none;white-space:nowrap}
 .nomap{background:var(--chip);border-radius:12px;padding:16px;color:var(--mute);text-align:center}
 .claim.wide{width:100%;padding:14px;font-size:16px}   /* big Claim button */
