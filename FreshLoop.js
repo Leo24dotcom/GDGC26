@@ -109,6 +109,28 @@ $("drop").onkeydown=function(e){if(e.key==="Enter"||e.key===" "){e.preventDefaul
 $("file").onchange=function(){var f=this.files[0];if(!f)return;var r=new FileReader();
   r.onload=function(){photo=r.result;$("drop").className="drop has";$("drop").style.backgroundImage="url("+photo+")"};r.readAsDataURL(f)};
 
+/* ===== 8b. CAMERA =====
+   "Take photo" opens the live camera inside the form; press it again to capture.
+   If the browser has no live camera (or permission is denied), it falls back to the phone's camera app. */
+var stream=null;   // the live camera stream while the camera is open
+// Turns the camera off and shows the photo box again
+function stopCam(){if(stream){stream.getTracks().forEach(function(t){t.stop()});stream=null}$("cam").hidden=true;$("drop").hidden=false;$("camBtn").textContent="📷 Take photo"}
+// Saves a photo (as a data URL) and shows it as the preview in the photo box
+function setPhoto(data){photo=data;$("drop").className="drop has";$("drop").style.backgroundImage="url("+data+")"}
+$("camBtn").onclick=function(){
+  if(stream){   // camera is already live: capture the current frame
+    var v=$("cam"),c=document.createElement("canvas");c.width=v.videoWidth;c.height=v.videoHeight;c.getContext("2d").drawImage(v,0,0);
+    setPhoto(c.toDataURL("image/jpeg",0.85));stopCam();return}
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){$("fileCam").click();return}   // no live camera support
+  navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"},audio:false}).then(function(s){
+    stream=s;$("cam").srcObject=s;$("cam").hidden=false;$("drop").hidden=true;$("camBtn").textContent="📸 Capture";
+  }).catch(function(){$("fileCam").click()})};   // permission denied or no camera
+$("upBtn").onclick=function(){$("file").click()};   // "Upload photo" opens the file picker
+// Photo taken with the phone's camera app (the fallback)
+$("fileCam").onchange=function(){var f=this.files[0];if(!f)return;var r=new FileReader();r.onload=function(){setPhoto(r.result)};r.readAsDataURL(f)};
+// Turn the camera off whenever the form closes (Cancel, Esc, or Post)
+$("dlg").addEventListener("close",stopCam);
+
 /* ===== 9. POST FORM: SUBMIT =====
    Builds a new post from the form fields and puts it at the top of the feed. */
 $("f").onsubmit=function(){

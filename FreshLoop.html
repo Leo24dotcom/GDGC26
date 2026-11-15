@@ -24,7 +24,10 @@
 <dialog id="dlg"><form id="f" method="dialog">
   <h2>Post surplus food</h2>
   <label class="drop" id="drop" for="file" tabindex="0"><span id="dropText">Tap to add a photo of the food</span></label>
+  <video id="cam" class="cam" autoplay playsinline muted hidden></video>
   <input type="file" id="file" accept="image/*" hidden>
+  <input type="file" id="fileCam" accept="image/*" capture="environment" hidden>
+  <div class="two"><button type="button" class="ghost" id="camBtn">📷 Take photo</button><button type="button" class="ghost" id="upBtn">Upload photo</button></div>
   <label>What is it?<input id="title" required maxlength="60" placeholder="e.g. Pastries from today’s bake"></label>
   <label>Details<textarea id="desc" rows="2" maxlength="160" placeholder="Items, how it’s packed, where to pick up"></textarea></label>
   <label>Pickup address<input id="addr" maxlength="100" placeholder="Street, city"></label>
