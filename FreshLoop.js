@@ -52,6 +52,15 @@ function listingTags(post) {
   return tags;
 }
 
+function formatPickupDeadline(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T/.test(value)) return value;
+  var date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
+}
+
 /* ===== 3. RENDER THE FEED =====
    Builds cards from posts array using textContent for text fields. */
 function render() {
@@ -164,7 +173,7 @@ function render() {
     if (deadlineVal) {
       var dlDiv = document.createElement("div");
       dlDiv.className = "deadline";
-      dlDiv.textContent = "Pickup by: " + deadlineVal;
+      dlDiv.textContent = "Pickup by: " + formatPickupDeadline(deadlineVal);
       bodyDiv.appendChild(dlDiv);
     }
 
@@ -317,7 +326,7 @@ function openDetail(i) {
   var serv = p.servings !== undefined && p.servings !== null ? p.servings : (p.est_servings !== undefined && p.est_servings !== null ? p.est_servings : (p.serv || 0));
   var deadline = p.pickupDeadline !== undefined && p.pickupDeadline !== null ? p.pickupDeadline : (p.pickup_deadline !== undefined && p.pickup_deadline !== null ? p.pickup_deadline : p.deadline);
   var hrs = p.safe_hours || p.hrs || 3;
-  var until = deadline || p.until || safeUntil(hrs);
+  var until = formatPickupDeadline(deadline) || p.until || safeUntil(hrs);
   var org = p.donor_name || p.org || "Community Donor";
   var where = p.where || (p.lat && p.lng ? p.lat.toFixed(2) + ", " + p.lng.toFixed(2) : "");
   var tags = listingTags(p);
@@ -368,6 +377,27 @@ $("detail").onclick = function(e) {
 };
 
 /* ===== 6. POST FORM POP-UP ===== */
+var postFields = $("f").querySelectorAll(".post-field");
+
+function updatePostFieldPreviews() {
+  postFields.forEach(function(section) {
+    var field = section.querySelector("input, textarea");
+    var value = field.value.trim();
+    section.querySelector(".field-preview").textContent =
+      field.id === "deadline" ? formatPickupDeadline(value) : value;
+  });
+}
+
+function localDateTimeValue(date) {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+$("f").addEventListener("input", updatePostFieldPreviews);
+$("f").addEventListener("invalid", function(event) {
+  var section = event.target.closest(".post-field");
+  if (section) section.open = true;
+}, true);
+
 var photo = null;
 var photoRequest = 0;
 var categoryEdited = false;
@@ -417,6 +447,10 @@ $("open").onclick = function() {
   photo = null;
   photoRequest++;
   labelEdits = {};
+  // Round up because the picker works in whole minutes.
+  $("deadline").min = localDateTimeValue(new Date(Math.ceil(Date.now() / 60000) * 60000));
+  postFields.forEach(function(section) { section.open = false; });
+  updatePostFieldPreviews();
   categoryEdited = false;
   caloriesEdited = false;
   calorieServingCount = null;
@@ -459,6 +493,7 @@ $("file").onchange = function() {
       calorieServingCount = null;
       updateCalorieReview();
     }
+    updatePostFieldPreviews();
     photo = r.result;
     $("drop").className = "drop has";
     $("drop").style.backgroundImage = "url(" + photo + ")";
@@ -534,6 +569,7 @@ function analysePhoto(dataUrl, mimeType, request) {
       }
     });
 
+    updatePostFieldPreviews();
     if (hintEl) {
       if (prefilled.length) {
         hintEl.textContent = "\u2713 Gemini suggested " + prefilled.join(" & ") + (copiedLabelText ? " \u2014 check the copied text against the package label" : " \u2014 edit freely");
@@ -564,7 +600,20 @@ $("f").onsubmit = async function(e) {
   var title = ($("title") ? $("title").value : "").trim();
   var servStr = ($("serv") ? $("serv").value : "").trim();
   var addr = ($("addr") ? $("addr").value : "").trim();
-  var deadline = ($("deadline") ? $("deadline").value : "").trim();
+  var deadlineEl = $("deadline");
+  var pickupTime = new Date(deadlineEl.value);
+  if (Number.isNaN(pickupTime.getTime()) ||
+      localDateTimeValue(pickupTime) !== deadlineEl.value ||
+      pickupTime.getTime() <= Date.now()) {
+    deadlineEl.closest(".post-field").open = true;
+    if (errEl) {
+      errEl.textContent = "Choose a valid pickup date and time in the future.";
+      errEl.style.display = "block";
+    }
+    deadlineEl.focus();
+    return;
+  }
+  var deadline = pickupTime.toISOString();
   var desc = ($("desc") ? $("desc").value : "").trim();
   var diet = $("diet") ? $("diet").value : "";
   var hrs = $("hrs") ? parseInt($("hrs").value, 10) : 3;
@@ -744,7 +793,7 @@ function renderClaimed() {
     if (deadlineVal) {
       var dlDiv = document.createElement("div");
       dlDiv.className = "deadline";
-      dlDiv.textContent = "Pickup by: " + deadlineVal;
+      dlDiv.textContent = "Pickup by: " + formatPickupDeadline(deadlineVal);
       body.appendChild(dlDiv);
     }
 

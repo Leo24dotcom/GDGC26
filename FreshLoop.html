@@ -33,19 +33,46 @@
   <label class="drop" id="drop" for="file" tabindex="0"><span id="dropText">Tap to add a photo of the food</span><span id="dropSpinner" class="drop-spinner" aria-hidden="true" style="display:none"></span></label>
   <input type="file" id="file" accept="image/*" hidden>
   <div id="draftHint" class="draft-hint" style="display:none" aria-live="polite"></div>
-  <label>What is it?<input id="title" required maxlength="60" placeholder="e.g. Pastries from today’s bake"></label>
-  <label>Details<textarea id="desc" rows="2" maxlength="160" placeholder="Items, how it’s packed, where to pick up"></textarea></label>
-  <label>Ingredients from label<textarea id="ingredients_text" rows="2" maxlength="4000" placeholder="Upload a clear package label or enter the printed ingredients"></textarea></label>
-  <label>Allergen statement from label<textarea id="allergen_statement" rows="2" maxlength="2000" placeholder="Copy printed statements such as Contains or May contain"></textarea></label>
-  <label>Pickup address<input id="addr" required maxlength="100" placeholder="Street, city"></label>
-  <label>Pickup deadline<input id="deadline" name="pickup_deadline" required maxlength="100" placeholder="e.g. 8:00 PM today"></label>
+  <details class="post-field">
+    <summary><span id="titleLabel">What is it?</span><span class="field-preview"></span></summary>
+    <input id="title" aria-labelledby="titleLabel" required maxlength="60" placeholder="e.g. Pastries from today’s bake">
+  </details>
+  <details class="post-field">
+    <summary><span id="descLabel">Details</span><span class="field-preview"></span></summary>
+    <textarea id="desc" aria-labelledby="descLabel" rows="2" maxlength="160" placeholder="Items, how it’s packed, where to pick up"></textarea>
+  </details>
+  <details class="post-field">
+    <summary><span id="ingredients_textLabel">Ingredients from label</span><span class="field-preview"></span></summary>
+    <textarea id="ingredients_text" aria-labelledby="ingredients_textLabel" rows="2" maxlength="4000" placeholder="Upload a clear package label or enter the printed ingredients"></textarea>
+  </details>
+  <details class="post-field">
+    <summary><span id="allergen_statementLabel">Allergen statement from label</span><span class="field-preview"></span></summary>
+    <textarea id="allergen_statement" aria-labelledby="allergen_statementLabel" rows="2" maxlength="2000" placeholder="Copy printed statements such as Contains or May contain"></textarea>
+  </details>
+  <details class="post-field">
+    <summary><span id="addrLabel">Pickup address</span><span class="field-preview"></span></summary>
+    <input id="addr" aria-labelledby="addrLabel" required maxlength="100" placeholder="Street, city">
+  </details>
+  <details class="post-field">
+    <summary><span id="deadlineLabel">Pickup deadline</span><span class="field-preview"></span></summary>
+    <input id="deadline" aria-labelledby="deadlineLabel" name="pickup_deadline" type="datetime-local" required>
+  </details>
   <div class="two">
-    <label>Servings<input id="serv" type="number" min="1" value="10" required></label>
+    <details class="post-field">
+      <summary><span id="servLabel">Servings</span><span class="field-preview"></span></summary>
+      <input id="serv" aria-labelledby="servLabel" type="number" min="1" value="10" required>
+    </details>
     <label>Safe for<select id="hrs"><option value="1">1 hour</option><option value="3" selected>3 hours</option><option value="6">6 hours</option><option value="12">12 hours</option></select></label>
   </div>
   <div class="two">
-    <label>Min calories per serving<input id="calLow" type="number" min="0" step="1" placeholder="Unknown"></label>
-    <label>Max calories per serving<input id="calHigh" type="number" min="0" step="1" placeholder="Unknown"></label>
+    <details class="post-field">
+      <summary><span id="calLowLabel">Min calories per serving</span><span class="field-preview"></span></summary>
+      <input id="calLow" aria-labelledby="calLowLabel" type="number" min="0" step="1" placeholder="Unknown">
+    </details>
+    <details class="post-field">
+      <summary><span id="calHighLabel">Max calories per serving</span><span class="field-preview"></span></summary>
+      <input id="calHigh" aria-labelledby="calHighLabel" type="number" min="0" step="1" placeholder="Unknown">
+    </details>
   </div>
   <div id="calReview" hidden>
     <span aria-live="polite">The serving count changed. Review the calorie estimate.</span>
