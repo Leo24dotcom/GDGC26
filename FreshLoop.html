@@ -27,13 +27,18 @@
   <input type="file" id="file" accept="image/*" hidden>
   <label>What is it?<input id="title" required maxlength="60" placeholder="e.g. Pastries from today’s bake"></label>
   <label>Details<textarea id="desc" rows="2" maxlength="160" placeholder="Items, how it’s packed, where to pick up"></textarea></label>
-  <label>Pickup address<input id="addr" maxlength="100" placeholder="Street, city"></label>
+  <label>Pickup address<input id="addr" required maxlength="100" placeholder="Street, city"></label>
+  <label>Pickup deadline<input id="deadline" name="pickup_deadline" required maxlength="100" placeholder="e.g. 8:00 PM today"></label>
   <div class="two">
     <label>Servings<input id="serv" type="number" min="1" value="10" required></label>
     <label>Safe for<select id="hrs"><option value="1">1 hour</option><option value="3" selected>3 hours</option><option value="6">6 hours</option><option value="12">12 hours</option></select></label>
   </div>
   <label>Dietary tags<select id="diet"><option value="">None</option><option>Vegetarian</option><option>Halal</option><option>Nut-free</option></select></label>
-  <div class="acts"><button type="button" class="ghost" id="cancel">Cancel</button><button class="claim" id="submit" value="ok">Post</button></div>
+  <div id="formError" class="error-msg" style="display:none; color:var(--hot); font-weight:500; font-size:13.5px; margin-top:4px;"></div>
+  <div class="acts">
+    <button type="button" class="ghost" id="cancel">Cancel</button>
+    <button type="submit" class="claim" id="publish" name="publish" value="ok">Publish</button>
+  </div>
 </form></dialog>
 
 <dialog id="detail"><button class="x" id="dclose" aria-label="Close">✕</button><div id="detailBody"></div></dialog>
