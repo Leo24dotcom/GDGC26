@@ -4,7 +4,12 @@ var filter = "All";   // which filter chip is selected
 var meals = 1240;     // meals rescued counter
 
 /* ===== 2. HELPER FUNCTIONS ===== */
-var $ = function(i) { return document.getElementById(i); };
+var $ = function(i) {
+  var el = document.getElementById(i);
+  if (!el && i === "submit") el = document.getElementById("publish");
+  if (!el && i === "publish") el = document.getElementById("submit");
+  return el;
+};
 
 // Badge color: 1 hour or less = red, up to 4 hours = amber, otherwise green
 function urg(h) { return h <= 1 ? "hot" : h <= 4 ? "warm" : ""; }
@@ -24,7 +29,13 @@ function toast(m) {
   t.className = "toast";
   t.textContent = m;
   document.body.appendChild(t);
-  setTimeout(function() { t.remove(); }, 2200);
+  setTimeout(function() {
+    if (t.remove) {
+      t.remove();
+    } else if (t.parentNode) {
+      t.parentNode.removeChild(t);
+    }
+  }, 2200);
 }
 
 /* ===== 3. RENDER THE FEED =====
@@ -56,6 +67,7 @@ function render() {
     var titleVal = p.title || (p.items && p.items[0] && p.items[0].name) || "Surplus Food";
     var servVal = p.servings !== undefined && p.servings !== null ? p.servings : (p.est_servings !== undefined && p.est_servings !== null ? p.est_servings : p.serv);
     var addrVal = p.pickupAddress !== undefined && p.pickupAddress !== null ? p.pickupAddress : (p.pickup_address !== undefined && p.pickup_address !== null ? p.pickup_address : p.addr);
+    var deadlineVal = p.pickupDeadline !== undefined && p.pickupDeadline !== null ? p.pickupDeadline : (p.pickup_deadline !== undefined && p.pickup_deadline !== null ? p.pickup_deadline : p.deadline);
     var orgVal = p.donor_name || p.org || "Community Donor";
     var whereVal = p.where || (p.lat && p.lng ? p.lat.toFixed(2) + ", " + p.lng.toFixed(2) : "");
     var descVal = p.desc || p.storage_notes || "";
@@ -131,6 +143,14 @@ function render() {
       addrDiv.className = "addr";
       addrDiv.textContent = addrVal;
       bodyDiv.appendChild(addrDiv);
+    }
+
+    // pickupDeadline (shown when present via textContent)
+    if (deadlineVal) {
+      var dlDiv = document.createElement("div");
+      dlDiv.className = "deadline";
+      dlDiv.textContent = "Pickup by: " + deadlineVal;
+      bodyDiv.appendChild(dlDiv);
     }
 
     // Dietary tags and allergen warnings
@@ -227,8 +247,9 @@ function openDetail(i) {
   var desc = p.desc || p.storage_notes || "";
   var addr = p.pickupAddress !== undefined && p.pickupAddress !== null ? p.pickupAddress : (p.pickup_address !== undefined && p.pickup_address !== null ? p.pickup_address : p.addr);
   var serv = p.servings !== undefined && p.servings !== null ? p.servings : (p.est_servings !== undefined && p.est_servings !== null ? p.est_servings : (p.serv || 0));
+  var deadline = p.pickupDeadline !== undefined && p.pickupDeadline !== null ? p.pickupDeadline : (p.pickup_deadline !== undefined && p.pickup_deadline !== null ? p.pickup_deadline : p.deadline);
   var hrs = p.safe_hours || p.hrs || 3;
-  var until = p.until || safeUntil(hrs);
+  var until = deadline || p.until || safeUntil(hrs);
   var org = p.donor_name || p.org || "Community Donor";
   var where = p.where || (p.lat && p.lng ? p.lat.toFixed(2) + ", " + p.lng.toFixed(2) : "");
   var tags = p.dietary_tags || p.tags || [];
@@ -244,7 +265,7 @@ function openDetail(i) {
     '<div class="dbody">' +
     '<div class="who flush"><div class="av">' + (p.av || "🥐") + '</div><div><b>' + esc(org) + '</b><span>' + esc(where) + '</span></div></div>' +
     '<h2>' + esc(title) + '</h2><p class="desc">' + esc(desc) + '</p>' +
-    '<div class="facts"><div><b>' + serv + '</b><span>servings</span></div><div><b>' + until + '</b><span>safe until</span></div></div>' +
+    '<div class="facts"><div><b>' + serv + '</b><span>servings</span></div><div><b>' + esc(until) + '</b><span>pickup deadline</span></div></div>' +
     '<div class="tags">' + tags.map(function(t) { return '<span class="tag">' + esc(t) + '</span>'; }).join("") + warn.map(function(t) { return '<span class="tag warn">' + esc(t) + '</span>'; }).join("") + '</div>' +
     map +
     '<button class="claim wide" data-d="' + i + '"' + (p.claimed ? " disabled" : "") + '>' + (p.claimed ? "Claimed" : "Claim this food") + '</button></div>';
@@ -281,6 +302,11 @@ var photo = null;
 $("open").onclick = function() {
   $("f").reset();
   photo = null;
+  var errEl = $("formError");
+  if (errEl) {
+    errEl.textContent = "";
+    errEl.style.display = "none";
+  }
   $("drop").className = "drop";
   $("drop").style.backgroundImage = "";
   $("dropText").textContent = "Tap to add a photo of the food";
@@ -308,39 +334,94 @@ $("file").onchange = function() {
   r.readAsDataURL(f);
 };
 
-$("f").onsubmit = function() {
-  var h = parseInt($("hrs").value, 10), d = $("diet").value;
-  var addr = $("addr").value.trim();
-  var serv = parseInt($("serv").value, 10) || 1;
+/* ===== 7. PUBLISH LISTING (POST /listings) ===== */
+$("f").onsubmit = async function(e) {
+  if (e && e.preventDefault) e.preventDefault();
 
-  posts.unshift({
-    org: "You",
-    av: "🙋",
-    where: "Just posted",
+  var errEl = $("formError");
+  if (errEl) {
+    errEl.textContent = "";
+    errEl.style.display = "none";
+  }
+
+  var title = ($("title") ? $("title").value : "").trim();
+  var servStr = ($("serv") ? $("serv").value : "").trim();
+  var addr = ($("addr") ? $("addr").value : "").trim();
+  var deadline = ($("deadline") ? $("deadline").value : "").trim();
+  var desc = ($("desc") ? $("desc").value : "").trim();
+  var diet = $("diet") ? $("diet").value : "";
+  var hrs = $("hrs") ? parseInt($("hrs").value, 10) : 3;
+
+  var payload = {
+    title: title,
+    servings: servStr ? parseInt(servStr, 10) : null,
+    serving_count: servStr ? parseInt(servStr, 10) : null,
+    pickup_address: addr,
     pickupAddress: addr,
-    addr: addr,
-    until: safeUntil(h),
-    title: $("title").value.trim(),
-    desc: $("desc").value.trim() || "Pickup details to be confirmed.",
-    servings: serv,
-    serv: serv,
-    hrs: h,
-    tags: d ? [d] : [],
-    warn: [],
-    emoji: "🍽️",
-    g: "#E8DFC0,#C7B77A",
-    img: photo,
-    fresh: true
-  });
+    pickup_deadline: deadline,
+    pickupDeadline: deadline,
+    deadline: deadline,
+    desc: desc,
+    diet: diet,
+    dietary_tags: diet ? [diet] : [],
+    safe_hours: hrs,
+    donor_name: "You"
+  };
 
-  filter = "All";
-  chips();
-  render();
-  window.scrollTo({ top: 0, behavior: "smooth" });
-  toast("Posted. Nearby receivers will be alerted.");
+  if (photo) {
+    payload.img = photo;
+  }
+
+  try {
+    var res = await fetch("/listings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      var errData = await res.json().catch(function() { return {}; });
+      var errMsg = errData.detail || errData.error || errData.message || ("Failed to publish listing (" + res.status + ")");
+      if (typeof errMsg === "object") {
+        try { errMsg = JSON.stringify(errMsg); } catch (_) {}
+      }
+      if (errEl) {
+        errEl.textContent = errMsg;
+        errEl.style.display = "block";
+      }
+      toast(errMsg);
+      // Keep form entries on failure!
+      return;
+    }
+
+    // Success: close modal, clear form, refresh feed
+    $("dlg").close();
+    $("f").reset();
+    photo = null;
+    if ($("drop")) {
+      $("drop").className = "drop";
+      $("drop").style.backgroundImage = "";
+      $("dropText").textContent = "Tap to add a photo of the food";
+    }
+    if (errEl) {
+      errEl.textContent = "";
+      errEl.style.display = "none";
+    }
+
+    await loadListings();
+    toast("Listing published! Nearby receivers will be alerted.");
+  } catch (err) {
+    var msg = err.message || "Network error. Please try again.";
+    if (errEl) {
+      errEl.textContent = msg;
+      errEl.style.display = "block";
+    }
+    toast(msg);
+    // Keep form entries on failure!
+  }
 };
 
-/* ===== 7. FETCH LISTINGS FROM FASTAPI ===== */
+/* ===== 8. FETCH LISTINGS FROM FASTAPI ===== */
 function loadListings() {
   return fetch("/listings")
     .then(function(res) {
@@ -361,7 +442,7 @@ function loadListings() {
 
 window.loadListings = loadListings;
 
-/* ===== 8. STARTUP ===== */
+/* ===== 9. STARTUP ===== */
 chips();
 render();
 loadListings();
