@@ -38,6 +38,20 @@ function toast(m) {
   }, 2200);
 }
 
+function listingTags(post) {
+  var tags = (post.dietary_tags || post.tags || []).filter(function(tag) {
+    return tag.toLowerCase() !== "vegetarian";
+  });
+  if (post.food_category) tags.unshift(post.food_category);
+  if (post.vegetarian === "yes") tags.push("Vegetarian");
+  var calories = post.calories_per_serving;
+  if (calories) {
+    var range = calories.low === calories.high ? calories.low : calories.low + "–" + calories.high;
+    tags.push("Estimated " + range + " calories per serving");
+  }
+  return tags;
+}
+
 /* ===== 3. RENDER THE FEED =====
    Builds cards from posts array using textContent for text fields. */
 function render() {
@@ -45,6 +59,7 @@ function render() {
   feed.innerHTML = "";
 
   var list = posts.filter(function(p) {
+    if (filter === "Vegetarian") return p.vegetarian === "yes";
     var tags = p.dietary_tags || p.tags || [];
     return filter === "All" || tags.indexOf(filter) > -1;
   });
@@ -153,8 +168,8 @@ function render() {
       bodyDiv.appendChild(dlDiv);
     }
 
-    // Dietary tags and allergen warnings
-    var tags = p.dietary_tags || p.tags || [];
+    // Food category, dietary tags, and allergen warnings
+    var tags = listingTags(p);
     var warn = p.allergens || p.warn || [];
     if (tags.length || warn.length) {
       var tagsDiv = document.createElement("div");
@@ -305,7 +320,7 @@ function openDetail(i) {
   var until = deadline || p.until || safeUntil(hrs);
   var org = p.donor_name || p.org || "Community Donor";
   var where = p.where || (p.lat && p.lng ? p.lat.toFixed(2) + ", " + p.lng.toFixed(2) : "");
-  var tags = p.dietary_tags || p.tags || [];
+  var tags = listingTags(p);
   var warn = p.allergens || p.warn || [];
 
   var gParts = (p.g || "#F5D7A1,#E9A55B").split(",");
@@ -318,6 +333,8 @@ function openDetail(i) {
     '<div class="dbody">' +
     '<div class="who flush"><div class="av">' + (p.av || "🥐") + '</div><div><b>' + esc(org) + '</b><span>' + esc(where) + '</span></div></div>' +
     '<h2>' + esc(title) + '</h2><p class="desc">' + esc(desc) + '</p>' +
+    (p.ingredients_text ? '<p class="desc"><strong>Ingredients from label</strong><br>' + esc(p.ingredients_text) + '</p>' : '') +
+    (p.allergen_statement ? '<p class="desc"><strong>Allergen statement from label</strong><br>' + esc(p.allergen_statement) + '</p>' : '') +
     '<div class="facts"><div><b>' + serv + '</b><span>servings</span></div><div><b>' + esc(until) + '</b><span>pickup deadline</span></div></div>' +
     '<div class="tags">' + tags.map(function(t) { return '<span class="tag">' + esc(t) + '</span>'; }).join("") + warn.map(function(t) { return '<span class="tag warn">' + esc(t) + '</span>'; }).join("") + '</div>' +
     map +
@@ -352,9 +369,58 @@ $("detail").onclick = function(e) {
 
 /* ===== 6. POST FORM POP-UP ===== */
 var photo = null;
+var photoRequest = 0;
+var categoryEdited = false;
+var caloriesEdited = false;
+var calorieServingCount = null;
+var labelFields = {ingredients_text: "ingredients", allergen_statement: "allergen statement"};
+var labelEdits = {};
+
+Object.keys(labelFields).forEach(function(id) {
+  $(id).oninput = function() { labelEdits[id] = true; };
+});
+
+function updateCalorieReview() {
+  var needsReview = calorieServingCount !== null &&
+    Number($("serv").value) !== calorieServingCount &&
+    Boolean($("calLow").value || $("calHigh").value);
+  $("calReview").hidden = !needsReview;
+  return needsReview;
+}
+
+function confirmCalories() {
+  calorieServingCount = Number($("serv").value);
+  updateCalorieReview();
+}
+
+function editCalories() {
+  caloriesEdited = true;
+  confirmCalories();
+}
+
+$("serv").addEventListener("input", updateCalorieReview);
+$("calLow").oninput = editCalories;
+$("calHigh").oninput = editCalories;
+$("calConfirm").onclick = confirmCalories;
+
+$("category").onchange = function() { categoryEdited = true; };
+
+function resetDraftHint() {
+  var hintEl  = $("draftHint");
+  var spinner = $("dropSpinner");
+  if (hintEl)  { hintEl.textContent = ""; hintEl.style.display = "none"; hintEl.className = "draft-hint"; }
+  if (spinner) { spinner.style.display = "none"; }
+}
+
 $("open").onclick = function() {
   $("f").reset();
   photo = null;
+  photoRequest++;
+  labelEdits = {};
+  categoryEdited = false;
+  caloriesEdited = false;
+  calorieServingCount = null;
+  updateCalorieReview();
   var errEl = $("formError");
   if (errEl) {
     errEl.textContent = "";
@@ -363,10 +429,11 @@ $("open").onclick = function() {
   $("drop").className = "drop";
   $("drop").style.backgroundImage = "";
   $("dropText").textContent = "Tap to add a photo of the food";
+  resetDraftHint();
   $("dlg").showModal();
 };
 
-$("cancel").onclick = function() { $("dlg").close(); };
+$("cancel").onclick = function() { $("dlg").close(); resetDraftHint(); };
 
 $("drop").onkeydown = function(e) {
   if (e.key === "Enter" || e.key === " ") {
@@ -378,14 +445,111 @@ $("drop").onkeydown = function(e) {
 $("file").onchange = function() {
   var f = this.files[0];
   if (!f) return;
+  var request = ++photoRequest;
   var r = new FileReader();
   r.onload = function() {
+    if (request !== photoRequest || !$("dlg").open) return;
+    Object.keys(labelFields).forEach(function(id) {
+      if (!labelEdits[id]) $(id).value = "";
+    });
+    if (!categoryEdited) $("category").value = "";
+    if (!caloriesEdited) {
+      $("calLow").value = "";
+      $("calHigh").value = "";
+      calorieServingCount = null;
+      updateCalorieReview();
+    }
     photo = r.result;
     $("drop").className = "drop has";
     $("drop").style.backgroundImage = "url(" + photo + ")";
+    // Kick off Gemini analysis — fire and forget, never blocks the form
+    analysePhoto(photo, f.type || "image/jpeg", request);
   };
   r.readAsDataURL(f);
 };
+
+/* ===== 7a. GEMINI PHOTO ANALYSIS (POST /listings/draft) ===== */
+function analysePhoto(dataUrl, mimeType, request) {
+  var hintEl  = $("draftHint");
+  var spinner = $("dropSpinner");
+
+  // Show spinner overlay and hint text
+  if (spinner) spinner.style.display = "block";
+  if (hintEl)  { hintEl.textContent = "Analysing photo\u2026"; hintEl.className = "draft-hint"; hintEl.style.display = "block"; }
+
+  return fetch("/listings/draft", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image: dataUrl, mime_type: mimeType })
+  })
+  .then(function(res) { return res.ok ? res.json() : null; })
+  .then(function(data) {
+    if (request !== photoRequest || !$("dlg").open) return;
+    if (spinner) spinner.style.display = "none";
+    if (!data || data.source !== "gemini") {
+      if (hintEl) hintEl.style.display = "none";
+      return;
+    }
+
+    var prefilled = [];
+
+    // Prefill title only when the field is still blank
+    var titleEl = $("title");
+    if (data.title && titleEl && !titleEl.value.trim()) {
+      titleEl.value = data.title;
+      prefilled.push("title");
+    }
+
+    // Prefill servings only when the field still holds the default (10)
+    var servEl = $("serv");
+    if (data.servings && servEl) {
+      var current = parseInt(servEl.value, 10);
+      if (!servEl.value.trim() || current === 10) {
+        servEl.value = String(data.servings);
+        prefilled.push("servings");
+      }
+    }
+
+    var categoryEl = $("category");
+    if (!categoryEdited && data.food_category &&
+        Array.from(categoryEl.options).some(function(option) { return option.value === data.food_category; })) {
+      categoryEl.value = data.food_category;
+      prefilled.push("food category");
+    }
+
+    if (!caloriesEdited && data.calories_per_serving && data.servings) {
+      $("calLow").value = String(data.calories_per_serving.low);
+      $("calHigh").value = String(data.calories_per_serving.high);
+      calorieServingCount = data.servings;
+      prefilled.push("calorie estimate");
+    }
+    updateCalorieReview();
+
+    var copiedLabelText = false;
+    Object.keys(labelFields).forEach(function(id) {
+      if (!labelEdits[id] && data[id]) {
+        $(id).value = data[id];
+        copiedLabelText = true;
+        prefilled.push(labelFields[id]);
+      }
+    });
+
+    if (hintEl) {
+      if (prefilled.length) {
+        hintEl.textContent = "\u2713 Gemini suggested " + prefilled.join(" & ") + (copiedLabelText ? " \u2014 check the copied text against the package label" : " \u2014 edit freely");
+        hintEl.className = "draft-hint ok";
+      } else {
+        hintEl.style.display = "none";
+      }
+    }
+  })
+  .catch(function() {
+    if (request !== photoRequest || !$("dlg").open) return;
+    // Fail silently — form is already usable
+    if (spinner) spinner.style.display = "none";
+    if (hintEl)  hintEl.style.display = "none";
+  });
+}
 
 /* ===== 7. PUBLISH LISTING (POST /listings) ===== */
 $("f").onsubmit = async function(e) {
@@ -405,8 +569,22 @@ $("f").onsubmit = async function(e) {
   var diet = $("diet") ? $("diet").value : "";
   var hrs = $("hrs") ? parseInt($("hrs").value, 10) : 3;
 
+  var low = $("calLow").value;
+  var high = $("calHigh").value;
+  if (updateCalorieReview()) {
+    $("calConfirm").focus();
+    return;
+  }
+  var calories = low || high ? {
+    low: low === "" ? null : Number(low),
+    high: high === "" ? null : Number(high)
+  } : null;
+
   var payload = {
     title: title,
+    calories_per_serving: calories,
+    ingredients_text: $("ingredients_text").value.trim() || null,
+    allergen_statement: $("allergen_statement").value.trim() || null,
     servings: servStr ? parseInt(servStr, 10) : null,
     serving_count: servStr ? parseInt(servStr, 10) : null,
     pickup_address: addr,
@@ -417,6 +595,8 @@ $("f").onsubmit = async function(e) {
     desc: desc,
     diet: diet,
     dietary_tags: diet ? [diet] : [],
+    food_category: $("category").value || null,
+    vegetarian: $("vegetarian").value,
     safe_hours: hrs,
     donor_name: "You"
   };
@@ -568,7 +748,7 @@ function renderClaimed() {
       body.appendChild(dlDiv);
     }
 
-    // .row: servings + Confirm pickup button
+    // Servings and pickup actions
     var row = document.createElement("div");
     row.className = "row";
 
@@ -584,9 +764,18 @@ function renderClaimed() {
     pickupBtn.className = "claim";
     pickupBtn.setAttribute("data-pickup-id", p.id);
     pickupBtn.textContent = "Confirm pickup";
-    row.appendChild(pickupBtn);
+    var cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "ghost";
+    cancelBtn.textContent = "Cancel pickup";
+    cancelBtn.onclick = function() { cancelPickup(p, cancelBtn, pickupBtn); };
 
+    var actions = document.createElement("div");
+    actions.className = "pickup-actions";
+    actions.appendChild(pickupBtn);
+    actions.appendChild(cancelBtn);
     body.appendChild(row);
+    body.appendChild(actions);
     article.appendChild(body);
     feed.appendChild(article);
   });
@@ -612,7 +801,38 @@ if (claimedFeedEl) {
   };
 }
 
-/* ===== 11. CONFIRM PICKUP ===== */
+/* ===== 11. PICKUP ACTIONS ===== */
+async function cancelPickup(listing, cancelBtn, pickupBtn) {
+  cancelBtn.disabled = true;
+  pickupBtn.disabled = true;
+  try {
+    var res = await fetch("/listings/" + encodeURIComponent(listing.id) + "/cancel-pickup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ claimed_at: listing.claimed_at || listing.claimedAt || null })
+    });
+
+    if (!res.ok) {
+      var error = await res.json().catch(function() { return {}; });
+      toast(error.detail || "Failed to cancel pickup.");
+      if (res.status === 409 || res.status === 404) {
+        await Promise.all([loadClaimedListings(), loadListings(), loadMeals()]);
+      }
+      return;
+    }
+
+    toast("Pickup canceled.");
+    await Promise.all([loadClaimedListings(), loadListings()]);
+  } catch (err) {
+    console.error("Error canceling pickup:", err);
+    toast("Network error. Please try again.");
+  } finally {
+    cancelBtn.disabled = false;
+    pickupBtn.disabled = false;
+  }
+}
+
+
 async function confirmPickup(listingId) {
   try {
     var res = await fetch("/listings/" + encodeURIComponent(listingId) + "/pickup", {

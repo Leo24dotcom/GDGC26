@@ -146,7 +146,12 @@ def save_donor_listing(data: dict) -> str:
 
 def get_available_listings():
     docs = db.collection("listings").where("status", "==", "available").stream()
-    return [{"id": d.id, **d.to_dict()} for d in docs]
+    listings = []
+    for doc in docs:
+        data = doc.to_dict()
+        if not is_deadline_expired(data):
+            listings.append({"id": doc.id, **data})
+    return listings
 
 def get_claimed_listings():
     docs = db.collection("listings").where("status", "==", "claimed").stream()
@@ -196,6 +201,30 @@ def claim_listing(listing_id: str, receiver_name: str = "Neighbor") -> int:
     doc_ref = db.collection("listings").document(listing_id)
     transaction = db.transaction()
     return _claim_transaction(transaction, doc_ref, receiver_name)
+
+@firestore.transactional
+def _cancel_pickup_transaction(transaction, doc_ref, claimed_at: datetime | None) -> int:
+    snapshot = doc_ref.get(transaction=transaction)
+    if not snapshot.exists:
+        return 404
+    data = snapshot.to_dict() or {}
+    if data.get("status") != "claimed" or (data.get("claimed_at") or data.get("claimedAt")) != claimed_at:
+        return 409
+
+    transaction.update(doc_ref, {
+        "status": "available",
+        "receiver_name": firestore.DELETE_FIELD,
+        "claimed_by": firestore.DELETE_FIELD,
+        "claimed_at": firestore.DELETE_FIELD,
+        "claimedAt": firestore.DELETE_FIELD,
+    })
+    return 200
+
+
+def cancel_pickup_listing(listing_id: str, claimed_at: datetime | None) -> int:
+    doc_ref = db.collection("listings").document(listing_id)
+    return _cancel_pickup_transaction(db.transaction(), doc_ref, claimed_at)
+
 
 @firestore.transactional
 def _pickup_transaction(transaction, doc_ref) -> int:
