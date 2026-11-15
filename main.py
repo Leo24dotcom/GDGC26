@@ -1,6 +1,6 @@
 from pathlib import Path
 from typing import Optional, Union, Any, List
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from gemini_service import analyze, Listing
@@ -120,8 +120,23 @@ def list_listings():
     return get_available_listings()
 
 @app.post("/listings/{listing_id}/claim")
-def claim(listing_id: str, receiver_name: str):
-    claim_listing(listing_id, receiver_name)
+async def claim(listing_id: str, request: Request, receiver_name: Optional[str] = None):
+    name = receiver_name
+    if not name:
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                name = body.get("receiver_name") or body.get("receiverName")
+        except Exception:
+            pass
+    if not name:
+        name = "Neighbor"
+
+    res = claim_listing(listing_id, name)
+    if res == 404:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    if res == 409:
+        raise HTTPException(status_code=409, detail="This listing was already claimed or is no longer available")
     return {"ok": True}
 
 if __name__ == "__main__":

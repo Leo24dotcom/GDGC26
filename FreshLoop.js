@@ -190,7 +190,7 @@ function render() {
     var claimBtn = document.createElement("button");
     claimBtn.className = "claim";
     claimBtn.setAttribute("data-i", i);
-    if (p.claimed) {
+    if (p.claimed || p.status === "claimed") {
       claimBtn.disabled = true;
       claimBtn.textContent = "Claimed";
     } else {
@@ -222,22 +222,78 @@ $("chips").onclick = function(e) {
 };
 
 /* ===== 5. CLAIM + DETAIL VIEW ===== */
-function claim(i) {
-  var p = posts[i];
-  if (!p || p.claimed) return;
-  p.claimed = true;
-  var serv = p.servings !== undefined && p.servings !== null ? p.servings : (p.est_servings !== undefined && p.est_servings !== null ? p.est_servings : (p.serv || 0));
-  meals += (parseInt(serv, 10) || 0);
-  $("meals").textContent = meals.toLocaleString();
-  render();
-  if ($("detail").open) openDetail(i);
-  if (p.id) {
-    fetch("/listings/" + encodeURIComponent(p.id) + "/claim?receiver_name=Neighbor", { method: "POST" }).catch(function(e) {
-      console.error(e);
-    });
+async function claim(target) {
+  var p = posts[target];
+  if (!p && typeof target === "string") {
+    p = posts.find(function(item) { return item.id === target; });
   }
-  toast("Claimed. The donor has been notified.");
+  if (!p) return;
+  if (p.claimed || p.status === "claimed" || p.claiming) return;
+
+  var listingId = p.id;
+  if (!listingId) {
+    p.claimed = true;
+    p.status = "claimed";
+    toast("Claimed! The donor has been notified.");
+    render();
+    return;
+  }
+
+  p.claiming = true;
+  try {
+    var res = await fetch("/listings/" + encodeURIComponent(listingId) + "/claim?receiver_name=Neighbor", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }
+    });
+
+    if (res.status === 409) {
+      if ($("detail") && $("detail").open) {
+        $("detail").close();
+      }
+      toast("This listing was already claimed or is no longer available");
+      await loadListings();
+      return;
+    }
+
+    if (res.status === 404) {
+      if ($("detail") && $("detail").open) {
+        $("detail").close();
+      }
+      toast("Listing not found.");
+      await loadListings();
+      return;
+    }
+
+    if (!res.ok) {
+      var errData = await res.json().catch(function() { return {}; });
+      var errMsg = errData.detail || errData.error || ("Failed to claim listing (" + res.status + ")");
+      toast(errMsg);
+      await loadListings();
+      return;
+    }
+
+    // Success (HTTP 200/201)
+    p.claimed = true;
+    p.status = "claimed";
+    var serv = p.servings !== undefined && p.servings !== null ? p.servings : (p.est_servings !== undefined && p.est_servings !== null ? p.est_servings : (p.serv || 0));
+    meals += (parseInt(serv, 10) || 0);
+    if ($("meals")) $("meals").textContent = meals.toLocaleString();
+
+    if ($("detail") && $("detail").open) {
+      $("detail").close();
+    }
+
+    toast("Claimed! The donor has been notified.");
+    await loadListings();
+  } catch (err) {
+    console.error("Error claiming listing:", err);
+    toast("Network error. Please try again.");
+  } finally {
+    p.claiming = false;
+  }
 }
+
+window.claim = claim;
 
 function openDetail(i) {
   var p = posts[i];
@@ -268,7 +324,7 @@ function openDetail(i) {
     '<div class="facts"><div><b>' + serv + '</b><span>servings</span></div><div><b>' + esc(until) + '</b><span>pickup deadline</span></div></div>' +
     '<div class="tags">' + tags.map(function(t) { return '<span class="tag">' + esc(t) + '</span>'; }).join("") + warn.map(function(t) { return '<span class="tag warn">' + esc(t) + '</span>'; }).join("") + '</div>' +
     map +
-    '<button class="claim wide" data-d="' + i + '"' + (p.claimed ? " disabled" : "") + '>' + (p.claimed ? "Claimed" : "Claim this food") + '</button></div>';
+    '<button class="claim wide" data-d="' + i + '"' + ((p.claimed || p.status === "claimed") ? " disabled" : "") + '>' + ((p.claimed || p.status === "claimed") ? "Claimed" : "Claim this food") + '</button></div>';
 
   $("detail").showModal();
 }

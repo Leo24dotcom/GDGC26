@@ -29,6 +29,97 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
+def is_deadline_expired(data: dict) -> bool:
+    now_utc = datetime.now(timezone.utc)
+    now_local = datetime.now()
+
+    # 1. expires_at field
+    expires_at = data.get("expires_at")
+    if hasattr(expires_at, "to_datetime"):
+        expires_at = expires_at.to_datetime()
+    if isinstance(expires_at, datetime):
+        if expires_at.tzinfo is not None:
+            if expires_at < now_utc:
+                return True
+        else:
+            if expires_at < now_local:
+                return True
+
+    # 2. safe_hours + created_at
+    safe_hours = data.get("safe_hours")
+    created_at = data.get("created_at")
+    if hasattr(created_at, "to_datetime"):
+        created_at = created_at.to_datetime()
+    if safe_hours is not None and isinstance(created_at, datetime):
+        try:
+            sh = float(safe_hours)
+            cutoff = created_at + timedelta(hours=sh)
+            if cutoff.tzinfo is not None:
+                if cutoff < now_utc:
+                    return True
+            else:
+                if cutoff < now_local:
+                    return True
+        except (ValueError, TypeError):
+            pass
+
+    # 3. pickup_deadline / pickupDeadline / deadline
+    raw_dl = data.get("pickup_deadline") or data.get("pickupDeadline") or data.get("deadline")
+    if hasattr(raw_dl, "to_datetime"):
+        raw_dl = raw_dl.to_datetime()
+    if isinstance(raw_dl, datetime):
+        if raw_dl.tzinfo is not None:
+            if raw_dl < now_utc:
+                return True
+        else:
+            if raw_dl < now_local:
+                return True
+    elif isinstance(raw_dl, str) and raw_dl.strip():
+        s = raw_dl.strip()
+        # ISO format
+        try:
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is not None:
+                if dt < now_utc:
+                    return True
+            else:
+                if dt < now_local:
+                    return True
+            return False
+        except Exception:
+            pass
+
+        # Formats with date
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%d",
+            "%m/%d/%Y %H:%M:%S",
+            "%m/%d/%Y %H:%M",
+            "%m/%d/%Y",
+        ):
+            try:
+                dt = datetime.strptime(s, fmt)
+                if dt < now_local:
+                    return True
+                return False
+            except Exception:
+                pass
+
+        # Formats with time only
+        clean_s = s.lower().replace("today", "").replace("by", "").replace("at", "").strip()
+        for t_fmt in ("%I:%M %p", "%I:%M%p", "%H:%M"):
+            try:
+                t_val = datetime.strptime(clean_s, t_fmt).time()
+                today_dt = datetime.combine(now_local.date(), t_val)
+                if today_dt < now_local:
+                    return True
+                return False
+            except Exception:
+                pass
+
+    return False
+
 def save_listing(listing, donor_name: str, lat: float, lng: float) -> str:
     now = datetime.now(timezone.utc)
     data = listing.model_dump()
@@ -57,7 +148,27 @@ def get_available_listings():
     docs = db.collection("listings").where("status", "==", "available").stream()
     return [{"id": d.id, **d.to_dict()} for d in docs]
 
-def claim_listing(listing_id: str, receiver_name: str):
-    db.collection("listings").document(listing_id).update(
-        {"status": "claimed", "claimed_by": receiver_name}
-    )
+@firestore.transactional
+def _claim_transaction(transaction, doc_ref, receiver_name: str) -> int:
+    snapshot = doc_ref.get(transaction=transaction)
+    if not snapshot.exists:
+        return 404
+    data = snapshot.to_dict() or {}
+    if data.get("status") != "available":
+        return 409
+    if is_deadline_expired(data):
+        return 409
+    now = datetime.now(timezone.utc)
+    transaction.update(doc_ref, {
+        "status": "claimed",
+        "receiver_name": receiver_name,
+        "claimed_by": receiver_name,
+        "claimed_at": now,
+        "claimedAt": now,
+    })
+    return 200
+
+def claim_listing(listing_id: str, receiver_name: str = "Neighbor") -> int:
+    doc_ref = db.collection("listings").document(listing_id)
+    transaction = db.transaction()
+    return _claim_transaction(transaction, doc_ref, receiver_name)
