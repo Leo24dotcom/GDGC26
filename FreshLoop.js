@@ -42,7 +42,6 @@ function listingTags(post) {
   var tags = (post.dietary_tags || post.tags || []).filter(function(tag) {
     return tag.toLowerCase() !== "vegetarian";
   });
-  if (post.food_category) tags.unshift(post.food_category);
   if (post.vegetarian === "yes") tags.push("Vegetarian");
   var calories = post.calories_per_serving;
   if (calories) {
@@ -84,7 +83,7 @@ function render() {
   list.forEach(function(p) {
     var i = posts.indexOf(p);
     var article = document.createElement("article");
-    if (p.fresh) article.className = "new";
+    article.className = p.fresh ? "listing-card new" : "listing-card";
     article.setAttribute("data-open", i);
     article.tabIndex = 0;
 
@@ -95,33 +94,10 @@ function render() {
     var orgVal = p.donor_name || p.org || "Community Donor";
     var whereVal = p.where || (p.lat && p.lng ? p.lat.toFixed(2) + ", " + p.lng.toFixed(2) : "");
     var descVal = p.desc || p.storage_notes || "";
-    var hrs = p.safe_hours || p.hrs || 3;
 
-    // Top row: avatar, donor name, distance
-    var who = document.createElement("div");
-    who.className = "who";
-
-    var av = document.createElement("div");
-    av.className = "av";
-    av.textContent = p.av || "🥐";
-    who.appendChild(av);
-
-    var whoText = document.createElement("div");
-    var bOrg = document.createElement("b");
-    bOrg.textContent = orgVal;
-    whoText.appendChild(bOrg);
-
-    if (whereVal) {
-      var spanWhere = document.createElement("span");
-      spanWhere.textContent = whereVal;
-      whoText.appendChild(spanWhere);
-    }
-    who.appendChild(whoText);
-    article.appendChild(who);
-
-    // Photo area with urgency badge
+    // Food photo or illustration
     var photoDiv = document.createElement("div");
-    photoDiv.className = "photo";
+    photoDiv.className = "photo listing-photo";
     if (p.img) {
       photoDiv.style.backgroundImage = "url(" + p.img + ")";
     } else {
@@ -135,14 +111,6 @@ function render() {
     photoDiv.setAttribute("role", "img");
     photoDiv.setAttribute("aria-label", titleVal);
 
-    var badge = document.createElement("span");
-    badge.className = "badge " + urg(hrs);
-    var badgeDot = document.createElement("i");
-    badge.appendChild(badgeDot);
-    var badgeText = document.createTextNode(lbl(hrs));
-    badge.appendChild(badgeText);
-    photoDiv.appendChild(badge);
-
     article.appendChild(photoDiv);
 
     // Body area
@@ -153,6 +121,11 @@ function render() {
     var h2 = document.createElement("h2");
     h2.textContent = titleVal;
     bodyDiv.appendChild(h2);
+
+    var attribution = document.createElement("p");
+    attribution.className = "listing-attribution";
+    attribution.textContent = [orgVal, p.food_category, whereVal].filter(Boolean).join(" · ");
+    bodyDiv.appendChild(attribution);
 
     // Description (if present)
     if (descVal) {
@@ -169,15 +142,7 @@ function render() {
       bodyDiv.appendChild(addrDiv);
     }
 
-    // pickupDeadline (shown when present via textContent)
-    if (deadlineVal) {
-      var dlDiv = document.createElement("div");
-      dlDiv.className = "deadline";
-      dlDiv.textContent = "Pickup by: " + formatPickupDeadline(deadlineVal);
-      bodyDiv.appendChild(dlDiv);
-    }
-
-    // Food category, dietary tags, and allergen warnings
+    // Dietary tags and allergen warnings
     var tags = listingTags(p);
     var warn = p.allergens || p.warn || [];
     if (tags.length || warn.length) {
@@ -198,9 +163,31 @@ function render() {
       bodyDiv.appendChild(tagsDiv);
     }
 
-    // Row: servings + Claim button
+    // Pickup deadline and servings next to Claim
     var rowDiv = document.createElement("div");
-    rowDiv.className = "row";
+    rowDiv.className = "row listing-footer";
+    var pickupInfo = document.createElement("div");
+
+    if (deadlineVal) {
+      var deadline = document.createElement("div");
+      deadline.className = "listing-deadline";
+      var label = document.createElement("span");
+      label.textContent = "Pickup by";
+      var time = document.createElement("strong");
+      time.textContent = formatPickupDeadline(deadlineVal);
+
+      if (typeof deadlineVal === "string" && /^\d{4}-\d{2}-\d{2}T/.test(deadlineVal)) {
+        var minutesLeft = (Date.parse(deadlineVal) - Date.now()) / 60000;
+        if (minutesLeft > 0 && minutesLeft <= 120) {
+          deadline.classList.add("due-soon");
+          label.textContent = "Pickup soon";
+        }
+      }
+
+      deadline.appendChild(label);
+      deadline.appendChild(time);
+      pickupInfo.appendChild(deadline);
+    }
 
     // Servings (shown when present via textContent)
     if (servVal !== undefined && servVal !== null && servVal !== "") {
@@ -208,7 +195,7 @@ function render() {
       metaSpan.className = "meta";
       var strServ = String(servVal);
       metaSpan.textContent = /^\d+$/.test(strServ.trim()) ? "About " + strServ.trim() + " servings" : strServ;
-      rowDiv.appendChild(metaSpan);
+      pickupInfo.appendChild(metaSpan);
     }
 
     var claimBtn = document.createElement("button");
@@ -220,6 +207,7 @@ function render() {
     } else {
       claimBtn.textContent = "Claim";
     }
+    rowDiv.appendChild(pickupInfo);
     rowDiv.appendChild(claimBtn);
 
     bodyDiv.appendChild(rowDiv);
@@ -330,6 +318,7 @@ function openDetail(i) {
   var org = p.donor_name || p.org || "Community Donor";
   var where = p.where || (p.lat && p.lng ? p.lat.toFixed(2) + ", " + p.lng.toFixed(2) : "");
   var tags = listingTags(p);
+  if (p.food_category) tags.unshift(p.food_category);
   var warn = p.allergens || p.warn || [];
 
   var gParts = (p.g || "#F5D7A1,#E9A55B").split(",");
