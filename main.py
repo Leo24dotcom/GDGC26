@@ -4,7 +4,16 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from gemini_service import analyze, Listing
-from db import save_listing, save_donor_listing, get_available_listings, claim_listing
+from db import (
+    save_listing,
+    save_donor_listing,
+    get_available_listings,
+    get_claimed_listings,
+    get_picked_up_listings,
+    get_meals_rescued,
+    claim_listing,
+    pickup_listing,
+)
 
 app = FastAPI()
 
@@ -116,8 +125,24 @@ def create_listing(body: dict):
         raise HTTPException(status_code=500, detail=f"Failed to save listing: {str(e)}")
 
 @app.get("/listings")
-def list_listings():
+def list_listings(status: Optional[str] = None):
+    if status == "claimed":
+        return get_claimed_listings()
+    elif status == "picked_up":
+        return get_picked_up_listings()
     return get_available_listings()
+
+@app.get("/listings/claimed")
+def list_claimed_listings():
+    return get_claimed_listings()
+
+@app.get("/listings/picked_up")
+def list_picked_up_listings():
+    return get_picked_up_listings()
+
+@app.get("/meals")
+def get_meals():
+    return {"meals_rescued": get_meals_rescued()}
 
 @app.post("/listings/{listing_id}/claim")
 async def claim(listing_id: str, request: Request, receiver_name: Optional[str] = None):
@@ -137,6 +162,15 @@ async def claim(listing_id: str, request: Request, receiver_name: Optional[str] 
         raise HTTPException(status_code=404, detail="Listing not found")
     if res == 409:
         raise HTTPException(status_code=409, detail="This listing was already claimed or is no longer available")
+    return {"ok": True}
+
+@app.post("/listings/{listing_id}/pickup")
+def pickup(listing_id: str):
+    res = pickup_listing(listing_id)
+    if res == 404:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    if res == 409:
+        raise HTTPException(status_code=409, detail="Listing is already picked up or was never claimed")
     return {"ok": True}
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 /* ===== 1. APP STATE ===== */
 var posts = [];       // populated by GET /listings
 var filter = "All";   // which filter chip is selected
-var meals = 1240;     // meals rescued counter
+var meals = 0;        // meals rescued counter (loaded from /meals)
 
 /* ===== 2. HELPER FUNCTIONS ===== */
 var $ = function(i) {
@@ -275,16 +275,13 @@ async function claim(target) {
     // Success (HTTP 200/201)
     p.claimed = true;
     p.status = "claimed";
-    var serv = p.servings !== undefined && p.servings !== null ? p.servings : (p.est_servings !== undefined && p.est_servings !== null ? p.est_servings : (p.serv || 0));
-    meals += (parseInt(serv, 10) || 0);
-    if ($("meals")) $("meals").textContent = meals.toLocaleString();
 
     if ($("detail") && $("detail").open) {
       $("detail").close();
     }
 
     toast("Claimed! The donor has been notified.");
-    await loadListings();
+    await Promise.all([loadListings(), loadClaimedListings()]);
   } catch (err) {
     console.error("Error claiming listing:", err);
     toast("Network error. Please try again.");
@@ -498,7 +495,160 @@ function loadListings() {
 
 window.loadListings = loadListings;
 
-/* ===== 9. STARTUP ===== */
+/* ===== 9. MEALS RESCUED COUNTER ===== */
+function loadMeals() {
+  return fetch("/meals")
+    .then(function(res) { return res.ok ? res.json() : null; })
+    .then(function(data) {
+      if (data && data.meals_rescued !== undefined) {
+        meals = data.meals_rescued;
+        if ($("meals")) $("meals").textContent = meals.toLocaleString();
+      }
+    })
+    .catch(function(err) { console.error("Failed to load meals:", err); });
+}
+window.loadMeals = loadMeals;
+
+/* ===== 10. CLAIMED FEED ===== */
+var claimedPosts = [];
+
+function renderClaimed() {
+  var feed = $("claimedFeed");
+  var section = $("claimedSection");
+  if (!feed) return;
+  feed.innerHTML = "";
+  if (!claimedPosts.length) {
+    if (section) section.style.display = "none";
+    return;
+  }
+  if (section) section.style.display = "";
+
+  claimedPosts.forEach(function(p) {
+    var article = document.createElement("article");
+
+    var titleVal = p.title || "Surplus Food";
+    var addrVal = p.pickupAddress !== undefined && p.pickupAddress !== null ? p.pickupAddress : (p.pickup_address !== undefined && p.pickup_address !== null ? p.pickup_address : (p.addr || ""));
+    var deadlineVal = p.pickupDeadline !== undefined && p.pickupDeadline !== null ? p.pickupDeadline : (p.pickup_deadline !== undefined && p.pickup_deadline !== null ? p.pickup_deadline : (p.deadline || ""));
+    var servVal = p.servings !== undefined && p.servings !== null ? p.servings : (p.est_servings !== undefined && p.est_servings !== null ? p.est_servings : (p.serv !== undefined ? p.serv : ""));
+    var orgVal = p.donor_name || p.org || "Community Donor";
+
+    // .who row
+    var who = document.createElement("div");
+    who.className = "who";
+    var av = document.createElement("div");
+    av.className = "av";
+    av.textContent = p.av || "🥐";
+    who.appendChild(av);
+    var whoText = document.createElement("div");
+    var b = document.createElement("b");
+    b.textContent = orgVal;
+    whoText.appendChild(b);
+    who.appendChild(whoText);
+    article.appendChild(who);
+
+    // .body
+    var body = document.createElement("div");
+    body.className = "body";
+
+    var h2 = document.createElement("h2");
+    h2.textContent = titleVal;
+    body.appendChild(h2);
+
+    if (addrVal) {
+      var addrDiv = document.createElement("div");
+      addrDiv.className = "addr";
+      addrDiv.textContent = addrVal;
+      body.appendChild(addrDiv);
+    }
+
+    if (deadlineVal) {
+      var dlDiv = document.createElement("div");
+      dlDiv.className = "deadline";
+      dlDiv.textContent = "Pickup by: " + deadlineVal;
+      body.appendChild(dlDiv);
+    }
+
+    // .row: servings + Confirm pickup button
+    var row = document.createElement("div");
+    row.className = "row";
+
+    if (servVal !== "" && servVal !== undefined && servVal !== null) {
+      var meta = document.createElement("span");
+      meta.className = "meta";
+      var strServ = String(servVal);
+      meta.textContent = /^\d+$/.test(strServ.trim()) ? "About " + strServ.trim() + " servings" : strServ;
+      row.appendChild(meta);
+    }
+
+    var pickupBtn = document.createElement("button");
+    pickupBtn.className = "claim";
+    pickupBtn.setAttribute("data-pickup-id", p.id);
+    pickupBtn.textContent = "Confirm pickup";
+    row.appendChild(pickupBtn);
+
+    body.appendChild(row);
+    article.appendChild(body);
+    feed.appendChild(article);
+  });
+}
+
+function loadClaimedListings() {
+  return fetch("/listings/claimed")
+    .then(function(res) { return res.ok ? res.json() : []; })
+    .then(function(data) {
+      claimedPosts = Array.isArray(data) ? data : [];
+      renderClaimed();
+    })
+    .catch(function(err) { console.error("Failed to load claimed listings:", err); });
+}
+window.loadClaimedListings = loadClaimedListings;
+
+// Wire Confirm pickup button clicks
+var claimedFeedEl = $("claimedFeed");
+if (claimedFeedEl) {
+  claimedFeedEl.onclick = function(e) {
+    var id = e.target.getAttribute("data-pickup-id");
+    if (id) confirmPickup(id);
+  };
+}
+
+/* ===== 11. CONFIRM PICKUP ===== */
+async function confirmPickup(listingId) {
+  try {
+    var res = await fetch("/listings/" + encodeURIComponent(listingId) + "/pickup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }
+    });
+
+    if (res.status === 409) {
+      toast("This listing is already picked up or was never claimed");
+      await Promise.all([loadClaimedListings(), loadMeals()]);
+      return;
+    }
+
+    if (res.status === 404) {
+      toast("Listing not found.");
+      await loadClaimedListings();
+      return;
+    }
+
+    if (!res.ok) {
+      var errData = await res.json().catch(function() { return {}; });
+      toast(errData.detail || "Failed to confirm pickup");
+      return;
+    }
+
+    // Success
+    toast("Pickup confirmed! Thank you for rescuing this food.");
+    await Promise.all([loadClaimedListings(), loadListings(), loadMeals()]);
+  } catch (err) {
+    console.error("Error confirming pickup:", err);
+    toast("Network error. Please try again.");
+  }
+}
+window.confirmPickup = confirmPickup;
+
+/* ===== 12. STARTUP ===== */
 chips();
 render();
-loadListings();
+Promise.all([loadListings(), loadClaimedListings(), loadMeals()]);
